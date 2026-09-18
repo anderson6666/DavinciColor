@@ -111,6 +111,16 @@ export default function MediaStage({
           <button className="btn-mini btn-outline" onClick={onExport} disabled={exporting || grading}>
             {exporting ? `导出中 ${Math.round(progress * 100)}%` : isVideo ? '导出视频' : '导出图片'}
           </button>
+          {isVideo && (
+            <a
+              className="convert-link"
+              href="https://openreplay.com/zh/tools/webm-to-mp4/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              WebM 转 MP4 ↗
+            </a>
+          )}
         </div>
       </div>
 

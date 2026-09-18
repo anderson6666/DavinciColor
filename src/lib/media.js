@@ -167,11 +167,17 @@ export async function renderFiltered(src, filter, cleanups) {
  * 导出视频：逐帧套用全部调色，用 MediaRecorder 录制为 webm，并带上源素材的音频。
  * 录制为实时时长，onProgress(0~1) 汇报进度。
  */
-export async function exportFilteredVideo(src, filter, cleanups, onProgress) {
+export async function exportFilteredVideo(src, filter, cleanups, onProgress, maxWidth = 1920) {
   const el = await loadMedia(src, true);
-  const mw = el.videoWidth;
-  const mh = el.videoHeight;
+  let mw = el.videoWidth;
+  let mh = el.videoHeight;
   if (!mw || !mh) throw new Error('no video size');
+  // 限制导出宽度以降低每帧绘制开销，避免主线程被占满导致慢放/丢帧（保持宽高比）
+  if (mw > maxWidth) {
+    const s = maxWidth / mw;
+    mw = Math.round(mw * s);
+    mh = Math.round(mh * s);
+  }
   const c = document.createElement('canvas');
   c.width = mw;
   c.height = mh;
@@ -214,12 +220,17 @@ export async function exportFilteredVideo(src, filter, cleanups, onProgress) {
   rec.start(250);
   await el.play();
   const ended = new Promise((res) => el.addEventListener('ended', res, { once: true }));
+  // 用 requestVideoFrameCallback 让 canvas 严格镜像视频“当前显示帧”，
+  // 而不是用 rAF（rAF 与视频帧无关、且绘制慢会导致 canvas 落后于播放时刻，造成末尾内容丢失）。
+  // 支持 rVFC 的浏览器用它；否则回退到 rAF。
+  const scheduleDraw = (cb) =>
+    el.requestVideoFrameCallback ? el.requestVideoFrameCallback(cb) : requestAnimationFrame(cb);
   const tick = () => {
     drawFilteredFrame(ctx, el, mw, mh, filter, cleanups);
     if (onProgress && el.duration > 0) onProgress(Math.min(1, el.currentTime / el.duration));
-    if (!el.ended) requestAnimationFrame(tick);
+    if (!el.ended) scheduleDraw(tick);
   };
-  requestAnimationFrame(tick);
+  scheduleDraw(tick);
   await ended;
   await new Promise((r) => setTimeout(r, 300));
   rec.stop();

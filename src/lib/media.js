@@ -164,7 +164,7 @@ export async function renderFiltered(src, filter, cleanups) {
 }
 
 /**
- * 导出视频：逐帧套用全部调色，用 MediaRecorder 录制为 webm（无声，与预览一致）。
+ * 导出视频：逐帧套用全部调色，用 MediaRecorder 录制为 webm，并带上源素材的音频。
  * 录制为实时时长，onProgress(0~1) 汇报进度。
  */
 export async function exportFilteredVideo(src, filter, cleanups, onProgress) {
@@ -177,7 +177,24 @@ export async function exportFilteredVideo(src, filter, cleanups, onProgress) {
   c.height = mh;
   const ctx = c.getContext('2d');
   const stream = c.captureStream(30);
-  const mime = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(
+
+  // 保留源素材的声音：解除 muted（muted 会让 captureStream 的音频轨道变成静音），
+  // 音量拉到 0 避免导出过程中外放；把素材的音频轨道并入录制流。
+  el.muted = false;
+  el.volume = 0;
+  if (!el.parentNode) {
+    el.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0;';
+    document.body.appendChild(el);
+  }
+  try {
+    const ms = el.captureStream ? el.captureStream() : el.mozCaptureStream && el.mozCaptureStream();
+    const audioTracks = (ms && ms.getAudioTracks()) || [];
+    for (const t of audioTracks) stream.addTrack(t);
+  } catch (e) {
+    /* 素材无音频或浏览器不支持时不阻塞视频导出 */
+  }
+
+  const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(
     (m) => window.MediaRecorder && MediaRecorder.isTypeSupported(m)
   );
   if (!mime) throw new Error('MediaRecorder unsupported');
